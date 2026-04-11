@@ -92,8 +92,8 @@
 
       const Sound = {
         playLaser() {
-          const osc = AudioCtx.createOscillator();
-          const gain = AudioCtx.createGain();
+          const osc = AudioCtx.createOscillator(),
+            gain = AudioCtx.createGain();
           osc.type = "sawtooth";
           osc.frequency.setValueAtTime(680, AudioCtx.currentTime);
           osc.frequency.exponentialRampToValueAtTime(
@@ -110,8 +110,8 @@
           osc.stop(AudioCtx.currentTime + 0.15);
         },
         playEnemyLaser() {
-          const osc = AudioCtx.createOscillator();
-          const gain = AudioCtx.createGain();
+          const osc = AudioCtx.createOscillator(),
+            gain = AudioCtx.createGain();
           osc.type = "square";
           osc.frequency.setValueAtTime(420, AudioCtx.currentTime);
           osc.frequency.exponentialRampToValueAtTime(
@@ -128,12 +128,12 @@
           osc.stop(AudioCtx.currentTime + 0.2);
         },
         playHit() {
-          const noise = AudioCtx.createBufferSource();
-          const buffer = AudioCtx.createBuffer(
-            1,
-            AudioCtx.sampleRate * 0.08,
-            AudioCtx.sampleRate,
-          );
+          const noise = AudioCtx.createBufferSource(),
+            buffer = AudioCtx.createBuffer(
+              1,
+              AudioCtx.sampleRate * 0.08,
+              AudioCtx.sampleRate,
+            );
           const data = buffer.getChannelData(0);
           for (let i = 0; i < buffer.length; i++)
             data[i] = Math.random() * 2 - 1;
@@ -151,12 +151,12 @@
           noise.start();
         },
         playExplode() {
-          const noise = AudioCtx.createBufferSource();
-          const buffer = AudioCtx.createBuffer(
-            1,
-            AudioCtx.sampleRate * 0.35,
-            AudioCtx.sampleRate,
-          );
+          const noise = AudioCtx.createBufferSource(),
+            buffer = AudioCtx.createBuffer(
+              1,
+              AudioCtx.sampleRate * 0.35,
+              AudioCtx.sampleRate,
+            );
           const data = buffer.getChannelData(0);
           for (let i = 0; i < buffer.length; i++)
             data[i] = Math.random() * 2 - 1;
@@ -178,12 +178,12 @@
           noise.start();
         },
         playBaseExplode() {
-          const noise = AudioCtx.createBufferSource();
-          const buffer = AudioCtx.createBuffer(
-            1,
-            AudioCtx.sampleRate * 0.85,
-            AudioCtx.sampleRate,
-          );
+          const noise = AudioCtx.createBufferSource(),
+            buffer = AudioCtx.createBuffer(
+              1,
+              AudioCtx.sampleRate * 0.85,
+              AudioCtx.sampleRate,
+            );
           const data = buffer.getChannelData(0);
           for (let i = 0; i < buffer.length; i++)
             data[i] = Math.random() * 2 - 1;
@@ -217,8 +217,8 @@
           rumble.stop(AudioCtx.currentTime + 0.8);
         },
         playBounce() {
-          const osc = AudioCtx.createOscillator();
-          const gain = AudioCtx.createGain();
+          const osc = AudioCtx.createOscillator(),
+            gain = AudioCtx.createGain();
           osc.type = "sine";
           osc.frequency.setValueAtTime(280, AudioCtx.currentTime);
           gain.gain.setValueAtTime(0.15, AudioCtx.currentTime);
@@ -250,6 +250,10 @@
       let round = 1;
       let keys = {};
       let lastFighterSpawn = 0;
+
+      let debugMode = false;
+      let rotationFrozen = false;
+      let lastExplosionReason = "none";
 
       const PLAYER_COLORS = ["#00ffff", "#ff00ff", "#ffff00", "#00ff00"];
       const START_POS = [
@@ -310,7 +314,7 @@
           this.color = color;
           this.id = id;
           this.radius = 14;
-          this.lives = 3;
+          this.lives = 12;
           this.score = 0;
           this.droids = 0;
           this.thrusting = false;
@@ -345,19 +349,15 @@
           this.x += this.vx;
           this.y += this.vy;
           bounce(this, 20);
-
           if (this.x <= 20 || this.x >= WIDTH - 20)
             this.angle = Math.PI - this.angle;
           if (this.y <= 20 || this.y >= HEIGHT - 20) this.angle = -this.angle;
           this.angle =
             ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-
           if (this.fireCooldown > 0) this.fireCooldown--;
-
           let myBoltCount = 0;
           for (let i = 0; i < bolts.length; i++)
             if (bolts[i].owner === this.id) myBoltCount++;
-
           if (keys[ctrl.fire] && this.fireCooldown <= 0) {
             if (myBoltCount >= 3) {
               for (let i = 0; i < bolts.length; i++) {
@@ -429,17 +429,33 @@
           this.radius = 98;
           this.changeTimer = 0;
           this.destroyedTimer = 0;
+          this.tunnelStartX = 0;
+          this.tunnelStartY = 0;
+          this.tunnelEndX = 0;
+          this.tunnelEndY = 0;
+        }
+        updateTunnelLine() {
+          const tunnelAngle = this.angle + Math.PI * 0.78;
+          const startOffset = 20;
+          const tunnelLength = 85;
+          const relTx = Math.cos(tunnelAngle) * startOffset;
+          const relTy = Math.sin(tunnelAngle) * startOffset;
+          const relEx = relTx + Math.cos(tunnelAngle) * tunnelLength;
+          const relEy = relTy + Math.sin(tunnelAngle) * tunnelLength;
+          this.tunnelStartX = this.x + relTx;
+          this.tunnelStartY = this.y + relTy;
+          this.tunnelEndX = this.x + relEx;
+          this.tunnelEndY = this.y + relEy;
+          this.tunnelAngleDebug = tunnelAngle;
         }
         update() {
           if (this.destroyedTimer > 0) {
             this.destroyedTimer--;
             return;
           }
-
           this.x += this.vx;
           this.y += this.vy;
-          this.angle += this.angleSpeed;
-
+          if (!rotationFrozen) this.angle += this.angleSpeed;
           this.changeTimer--;
           if (this.changeTimer <= 0) {
             this.changeTimer = 180 + Math.random() * 360;
@@ -447,19 +463,16 @@
             this.vy = (Math.random() - 0.5) * 0.42;
             this.angleSpeed = Math.random() < 0.5 ? 0.004 : -0.004;
           }
-
           bounce(this, 115);
+          this.updateTunnelLine();
         }
         draw() {
           if (this.destroyedTimer > 0) return;
-
           ctx.save();
           ctx.translate(this.x, this.y);
           ctx.rotate(this.angle);
-
-          // Main station body (cyan outline + solid interior)
-          ctx.strokeStyle = "#00aaff";
           ctx.fillStyle = "#004466";
+          ctx.strokeStyle = "#00aaff";
           ctx.lineWidth = 6.5;
           ctx.shadowBlur = 28;
           ctx.shadowColor = "#00aaff";
@@ -473,62 +486,43 @@
           ctx.closePath();
           ctx.fill();
           ctx.stroke();
-
-          // Tunnel opening — wide open passage with interior walls EXACTLY the same cyan color as the body (real cutout look)
-          const tunnelAngle = this.angle + Math.PI * 0.78;
-          const tx = Math.cos(tunnelAngle) * 42;
-          const ty = Math.sin(tunnelAngle) * 42;
-          const ex = tx + Math.cos(tunnelAngle) * 92;
-          const ey = ty + Math.sin(tunnelAngle) * 92;
-
-          // Interior walls of tunnel — same cyan as body (creates open passage effect)
-          ctx.strokeStyle = "#00aaff";
-          ctx.lineWidth = 36;
-          ctx.shadowBlur = 18;
-          ctx.shadowColor = "#00aaff";
-          ctx.beginPath();
-          ctx.moveTo(tx, ty);
-          ctx.lineTo(ex, ey);
-          ctx.stroke();
-
-          // Thin bright pink highlight inside the tunnel (visible path, matches screenshot)
-          ctx.strokeStyle = "#ff00cc";
-          ctx.lineWidth = 12;
-          ctx.shadowBlur = 22;
-          ctx.shadowColor = "#ff00cc";
-          ctx.beginPath();
-          ctx.moveTo(tx, ty);
-          ctx.lineTo(ex, ey);
-          ctx.stroke();
-
           ctx.restore();
+
+          ctx.strokeStyle = "#00aaff";
+          ctx.lineWidth = 42;
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.moveTo(this.tunnelStartX, this.tunnelStartY);
+          ctx.lineTo(this.tunnelEndX, this.tunnelEndY);
+          ctx.stroke();
+
+          ctx.strokeStyle = "#000000";
+          ctx.lineWidth = 32;
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.moveTo(this.tunnelStartX, this.tunnelStartY);
+          ctx.lineTo(this.tunnelEndX, this.tunnelEndY);
+          ctx.stroke();
         }
         isTunnelHit(bolt) {
           if (this.destroyedTimer > 0) return false;
-          const dx = bolt.x - this.x;
-          const dy = bolt.y - this.y;
+          const dx = bolt.x - this.x,
+            dy = bolt.y - this.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > this.radius + 110) return false;
-
-          const tunnelAngle = this.angle + Math.PI * 0.78;
-          const tx = Math.cos(tunnelAngle) * 42;
-          const ty = Math.sin(tunnelAngle) * 42;
-          const endX = tx + Math.cos(tunnelAngle) * 92;
-          const endY = ty + Math.sin(tunnelAngle) * 92;
-
+          if (dist > this.radius + 160) return false;
           const lineDist = this.distanceToLineSegment(
             bolt.x,
             bolt.y,
-            this.x + tx,
-            this.y + ty,
-            this.x + endX,
-            this.y + endY,
+            this.tunnelStartX,
+            this.tunnelStartY,
+            this.tunnelEndX,
+            this.tunnelEndY,
           );
-          return lineDist < 19; // only true tunnel entry triggers explosion
+          return lineDist < 7;
         }
         distanceToLineSegment(px, py, x1, y1, x2, y2) {
-          const dx = x2 - x1;
-          const dy = y2 - y1;
+          const dx = x2 - x1,
+            dy = y2 - y1;
           if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
           const t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
           const clampedT = Math.max(0, Math.min(1, t));
@@ -556,6 +550,7 @@
           this.lastPushedBy = null;
           this.emergedTimer = 0;
           this.shieldTimer = 0;
+          this.repelTimer = 0;
         }
         update(ships) {
           if (this.state === "forming") {
@@ -574,9 +569,9 @@
             }
             return;
           }
-
           this.emergedTimer = Math.max(0, this.emergedTimer - 1);
           if (this.shieldTimer > 0) this.shieldTimer--;
+          if (this.repelTimer > 0) this.repelTimer--;
 
           let target = null;
           let minDist = Infinity;
@@ -588,29 +583,53 @@
               target = s;
             }
           }
+
           if (target) {
             const a = Math.atan2(target.y - this.y, target.x - this.x);
-            this.angle = a;
-            this.vx += Math.cos(a) * (0.09 + round * 0.012);
-            this.vy += Math.sin(a) * (0.09 + round * 0.012);
+
+            if (this.repelTimer > 0) {
+              let diff = a - this.angle;
+              diff = ((diff + Math.PI) % (Math.PI * 2)) - Math.PI;
+              this.angle += diff * 0.007; // exactly what you set
+            } else {
+              this.angle = a;
+            }
+
+            let attraction = 0.09 + round * 0.012;
+            if (this.repelTimer > 0) attraction *= 0.1;
+
+            this.vx += Math.cos(a) * attraction;
+            this.vy += Math.sin(a) * attraction;
           }
+
           this.x += this.vx;
           this.y += this.vy;
           this.vx *= 0.94;
           this.vy *= 0.94;
           bounce(this, 18);
 
-          if (this.fireCooldown > 0) this.fireCooldown--;
-          if (Math.random() < 0.019 + round * 0.008 && this.fireCooldown <= 0) {
-            this.fireFireball(target);
-            this.fireCooldown = 42;
+          // ONLY FIRE WHEN FACING PLAYER (already good)
+          if (target) {
+            const a = Math.atan2(target.y - this.y, target.x - this.x);
+            let angleDiff = Math.abs(
+              ((a - this.angle + Math.PI) % (Math.PI * 2)) - Math.PI,
+            );
+            if (
+              angleDiff < 0.65 &&
+              Math.random() < 0.019 + round * 0.008 &&
+              this.fireCooldown <= 0
+            ) {
+              this.fireFireball(target);
+              this.fireCooldown = 42;
+            }
           }
 
+          // ELIMINATOR CRASHES INTO BASE → EXPLODES (fixed and made easier to trigger)
           if (
             this.state === "emerged" &&
             this.shieldTimer <= 0 &&
             Math.hypot(this.x - this.base.x, this.y - this.base.y) <
-              this.base.radius + 45
+              this.base.radius + 55
           ) {
             createExplosion(this.x, this.y, true);
             if (this.lastPushedBy !== null) {
@@ -642,7 +661,6 @@
           ctx.save();
           ctx.translate(this.x, this.y);
           ctx.rotate(this.angle);
-
           if (this.shieldTimer > 0) {
             ctx.strokeStyle = "#00ffff";
             ctx.lineWidth = 4;
@@ -654,7 +672,6 @@
             ctx.stroke();
             ctx.globalAlpha = 1;
           }
-
           if (this.state === "forming") {
             const prog = Math.max(0, 1 - this.formTimer / 460);
             ctx.strokeStyle = "#ff2222";
@@ -708,8 +725,8 @@
         update(ships) {
           for (let s of ships) {
             if (s.lives <= 0) continue;
-            const dx = this.x - s.x;
-            const dy = this.y - s.y;
+            const dx = this.x - s.x,
+              dy = this.y - s.y;
             const dist = Math.hypot(dx, dy);
             if (dist < 58 && dist > 0) {
               this.vx += (dx / dist) * 1.05;
@@ -718,15 +735,14 @@
           }
           for (let f of fighters) {
             if (f === this) continue;
-            const dx = this.x - f.x;
-            const dy = this.y - f.y;
+            const dx = this.x - f.x,
+              dy = this.y - f.y;
             const dist = Math.hypot(dx, dy);
             if (dist < 58 && dist > 0) {
               this.vx += (dx / dist) * 1.05;
               this.vy += (dy / dist) * 1.05;
             }
           }
-
           let target = null;
           let minDist = Infinity;
           for (let s of ships) {
@@ -737,7 +753,6 @@
               target = s;
             }
           }
-
           if (target && minDist < this.homingRange) {
             const a = Math.atan2(target.y - this.y, target.x - this.x);
             this.vx += Math.cos(a) * 0.16;
@@ -750,13 +765,11 @@
             }
             this.angle = Math.atan2(this.vy, this.vx);
           }
-
           this.x += this.vx;
           this.y += this.vy;
           this.vx *= 0.94;
           this.vy *= 0.94;
           bounce(this, 15);
-
           if (this.fireCooldown > 0) this.fireCooldown--;
           if (
             Math.random() < 0.045 &&
@@ -765,8 +778,8 @@
             minDist < 210 &&
             minDist > 65
           ) {
-            const dx = target.x - this.x;
-            const dy = target.y - this.y;
+            const dx = target.x - this.x,
+              dy = target.y - this.y;
             const len = Math.hypot(dx, dy) || 1;
             enemyBolts.push({
               x: this.x,
@@ -816,7 +829,6 @@
           });
         }
       }
-
       function createShips(count) {
         ships = [];
         for (let i = 0; i < count; i++) {
@@ -824,7 +836,6 @@
           ships.push(new Ship(pos.x, pos.y, PLAYER_COLORS[i], i));
         }
       }
-
       function initGame(players) {
         numPlayers = Math.max(1, Math.min(4, players));
         createShips(numPlayers);
@@ -836,26 +847,21 @@
         fighters = [];
         baseFragments = [];
         round = 1;
+        lastExplosionReason = "none";
         document.getElementById("hud").style.display = "flex";
         updateHUD();
       }
-
       function updateHUD() {
         const hud = document.getElementById("hud");
         let html = "";
         for (let i = 0; i < ships.length; i++) {
           const s = ships[i];
           if (s.lives > 0) {
-            html += `<div class="player-hud" style="border-color:${s.color};color:${s.color}">
-                        ${s.score.toString().padStart(7, "0")} 
-                        <span style="color:#ff0">◉</span> ${s.droids} 
-                        <span style="color:#00aaff">▲</span> ${s.lives}
-                    </div>`;
+            html += `<div class="player-hud" style="border-color:${s.color};color:${s.color}">${s.score.toString().padStart(7, "0")} <span style="color:#ff0">◉</span> ${s.droids} <span style="color:#00aaff">▲</span> ${s.lives}</div>`;
           }
         }
         hud.innerHTML = html;
       }
-
       function createExplosion(x, y, small = false) {
         for (let i = 0; i < (small ? 18 : 45); i++) {
           const angle = Math.random() * Math.PI * 2;
@@ -873,7 +879,6 @@
         }
         Sound.playExplode();
       }
-
       function spawnFighter() {
         if (fighters.length >= 3) return;
         const angle = Math.random() * Math.PI * 2;
@@ -887,7 +892,6 @@
       }
 
       function checkCollisions() {
-        // Player bolts → fighters
         for (let i = bolts.length - 1; i >= 0; i--) {
           const b = bolts[i];
           for (let j = fighters.length - 1; j >= 0; j--) {
@@ -907,8 +911,6 @@
             }
           }
         }
-
-        // Droid energy bolts → players
         for (let i = enemyBolts.length - 1; i >= 0; i--) {
           const b = enemyBolts[i];
           let hit = false;
@@ -924,7 +926,6 @@
           if (hit) enemyBolts.splice(i, 1);
         }
 
-        // Player bolts → Eliminator (only after shield)
         for (let i = bolts.length - 1; i >= 0; i--) {
           const b = bolts[i];
           if (
@@ -936,37 +937,29 @@
               Math.hypot(b.x - eliminator.x, b.y - eliminator.y) <
               eliminator.radius + 9
             ) {
-              eliminator.vx += b.vx * b.power * 1.35;
-              eliminator.vy += b.vy * b.power * 1.35;
-              eliminator.lastPushedBy = b.owner;
+              const dx = eliminator.x - b.x;
+              const dy = eliminator.y - b.y;
+              const len = Math.hypot(dx, dy) || 1;
+              eliminator.vx = (dx / len) * 6.2;
+              eliminator.vy = (dy / len) * 6.2;
+              eliminator.angle = Math.atan2(eliminator.vy, eliminator.vx);
+              eliminator.repelTimer = 160;
+              const ownerShip = ships[b.owner];
+              if (ownerShip && ownerShip.lives > 0) {
+                ownerShip.score += 125 + round * 40;
+                ownerShip.droids++;
+              }
               bolts.splice(i, 1);
               Sound.playHit();
+              continue;
             }
           }
         }
 
-        // Player bolts → base station body (solid walls) — STOP the bolt
-        for (let i = bolts.length - 1; i >= 0; i--) {
-          const b = bolts[i];
-          if (base.destroyedTimer === 0) {
-            const dx = b.x - base.x;
-            const dy = b.y - base.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist < base.radius + 12) {
-              // Hit solid body — destroy bolt, no explosion
-              if (!base.isTunnelHit(b)) {
-                bolts.splice(i, 1);
-                Sound.playHit();
-                continue;
-              }
-            }
-          }
-        }
-
-        // Player bolts → tunnel ONLY (strict tunnel path)
         for (let i = bolts.length - 1; i >= 0; i--) {
           const b = bolts[i];
           if (base.destroyedTimer === 0 && base.isTunnelHit(b)) {
+            lastExplosionReason = `Player bolt #${b.owner} ENTERED TUNNEL at (${b.x.toFixed(0)},${b.y.toFixed(0)})`;
             spawnBaseFragments(base.x, base.y);
             createExplosion(base.x, base.y, false);
             Sound.playBaseExplode();
@@ -977,10 +970,23 @@
             }
             base.destroyedTimer = 240;
             bolts.splice(i, 1);
+            continue;
           }
         }
-
-        // Fireballs → players
+        for (let i = bolts.length - 1; i >= 0; i--) {
+          const b = bolts[i];
+          if (base.destroyedTimer === 0) {
+            const dx = b.x - base.x,
+              dy = b.y - base.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < base.radius + 14) {
+              if (!base.isTunnelHit(b)) {
+                bolts.splice(i, 1);
+                Sound.playHit();
+              }
+            }
+          }
+        }
         for (let i = fireballs.length - 1; i >= 0; i--) {
           const f = fireballs[i];
           for (let s of ships) {
@@ -994,8 +1000,6 @@
             }
           }
         }
-
-        // Fighters into base
         for (let i = fighters.length - 1; i >= 0; i--) {
           const f = fighters[i];
           if (Math.hypot(f.x - base.x, f.y - base.y) < base.radius + 8) {
@@ -1011,7 +1015,6 @@
             continue;
           }
         }
-
         if (eliminator && eliminator.state === "emerged") {
           for (let s of ships) {
             if (s.lives <= 0) continue;
@@ -1026,7 +1029,6 @@
             }
           }
         }
-
         for (let s of ships) {
           if (s.lives <= 0) continue;
           if (
@@ -1042,7 +1044,6 @@
             updateHUD();
           }
         }
-
         const alive = ships.filter((s) => s.lives > 0).length;
         if (alive === 0 && state === "playing") state = "gameover";
       }
@@ -1052,7 +1053,6 @@
         ships.forEach((s) => s.update());
         base.update();
         if (eliminator) eliminator.update(ships);
-
         for (let i = bolts.length - 1; i >= 0; i--) {
           const b = bolts[i];
           b.x += b.vx;
@@ -1061,7 +1061,6 @@
           b.life--;
           if (b.life <= 0) bolts.splice(i, 1);
         }
-
         for (let i = enemyBolts.length - 1; i >= 0; i--) {
           const b = enemyBolts[i];
           b.x += b.vx;
@@ -1070,7 +1069,6 @@
           b.life--;
           if (b.life <= 0) enemyBolts.splice(i, 1);
         }
-
         for (let i = fireballs.length - 1; i >= 0; i--) {
           const f = fireballs[i];
           f.x += f.vx;
@@ -1079,7 +1077,6 @@
           f.life--;
           if (f.life <= 0) fireballs.splice(i, 1);
         }
-
         for (let i = baseFragments.length - 1; i >= 0; i--) {
           const f = baseFragments[i];
           f.x += f.vx;
@@ -1090,9 +1087,7 @@
           f.life--;
           if (f.life <= 0) baseFragments.splice(i, 1);
         }
-
         fighters.forEach((f) => f.update(ships));
-
         if (Date.now() - lastFighterSpawn > 1950 - round * 55) {
           lastFighterSpawn = Date.now();
           if (numPlayers === 1 || ships.filter((s) => s.lives > 0).length === 1)
@@ -1118,7 +1113,6 @@
           ctx.lineTo(WIDTH, y);
           ctx.stroke();
         }
-
         ctx.fillStyle = "#0f0";
         ctx.font = '18px "Press Start 2P"';
         ctx.textAlign = "center";
@@ -1133,7 +1127,6 @@
         if (base) base.draw();
         if (eliminator) eliminator.draw();
         fighters.forEach((f) => f.draw());
-
         ctx.shadowBlur = 12;
         for (let f of baseFragments) {
           ctx.save();
@@ -1153,7 +1146,6 @@
           ctx.stroke();
           ctx.restore();
         }
-
         ctx.shadowBlur = 8;
         bolts.forEach((b) => {
           ctx.fillStyle = "#00ffff";
@@ -1170,8 +1162,45 @@
           ctx.shadowColor = f.color;
           ctx.fillRect(f.x - 3, f.y - 3, 6, 6);
         });
-
         ships.forEach((s) => s.draw());
+
+        if (debugMode && base) {
+          ctx.save();
+          ctx.fillStyle = "rgba(0,255,0,0.85)";
+          ctx.font = '12px "Press Start 2P"';
+          ctx.textAlign = "left";
+          ctx.shadowBlur = 0;
+          ctx.fillText(
+            "DEBUG MODE — B = toggle   P = freeze rotation",
+            20,
+            580,
+          );
+          ctx.fillText(`Last explosion: ${lastExplosionReason}`, 20, 560);
+          ctx.fillText(
+            `Base frozen: ${rotationFrozen ? "YES" : "NO"}   Angle: ${(((base.angle * 180) / Math.PI) % 360).toFixed(0)}°`,
+            20,
+            540,
+          );
+          ctx.fillText(
+            `Tunnel startOffset: 20   tunnelLength: 85   tolerance: 7px`,
+            20,
+            520,
+          );
+          ctx.fillText(
+            `Tunnel direction: ${base.tunnelAngleDebug ? (((base.tunnelAngleDebug * 180) / Math.PI) % 360).toFixed(0) : 0}°`,
+            20,
+            500,
+          );
+          ctx.strokeStyle = "#ffff00";
+          ctx.lineWidth = 3;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(base.tunnelStartX, base.tunnelStartY);
+          ctx.lineTo(base.tunnelEndX, base.tunnelEndY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
 
         if (state === "gameover") {
           ctx.save();
@@ -1197,25 +1226,7 @@
 
       function showMenu() {
         const overlay = document.getElementById("overlay");
-        overlay.innerHTML = `
-            <div id="menu">
-                <h1>ELIMINATOR</h1>
-                <div class="subtitle">@ GREMLIN 1981</div>
-                <div class="option" onclick="startGame(1)">1 PLAYER — VS COMPUTER</div>
-                <div class="option" onclick="startGame(2)">2 PLAYERS — CO-OP / VERSUS</div>
-                <div class="option" onclick="startGame(3)">3 PLAYERS — CHAOS MODE</div>
-                <div class="option" onclick="startGame(4)">4 PLAYERS — MAXIMUM ACTION</div>
-                <div class="instructions">
-                    MAX 3 ENERGY BOLTS • NEW BOLT KILLS OLDEST<br>
-                    DAMPENED FLIGHT • VERY EASY TUNNEL SHOTS
-                </div>
-                <div style="margin-top:20px;font-size:12px;opacity:0.6">
-                    PLAYER 1: D (left) F (right) J (thrust) K (fire)<br>
-                    PLAYER 2: WASD + S<br>
-                    PLAYER 3: J (left) K (right) L (thrust) I (fire)<br>
-                    PLAYER 4: NUMPAD 4/6/8/5
-                </div>
-            </div>`;
+        overlay.innerHTML = `<div id="menu"><h1>ELIMINATOR</h1><div class="subtitle">@ GREMLIN 1981</div><div class="option" onclick="startGame(1)">1 PLAYER — VS COMPUTER</div><div class="option" onclick="startGame(2)">2 PLAYERS — CO-OP / VERSUS</div><div class="option" onclick="startGame(3)">3 PLAYERS — CHAOS MODE</div><div class="option" onclick="startGame(4)">4 PLAYERS — MAXIMUM ACTION</div><div class="instructions">MAX 3 ENERGY BOLTS • NEW BOLT KILLS OLDEST<br>DAMPENED FLIGHT • VERY EASY TUNNEL SHOTS</div><div style="margin-top:20px;font-size:12px;opacity:0.6">PLAYER 1: D/F/J/K<br>DEBUG: B = toggle debug, P = freeze base rotation</div></div>`;
       }
 
       window.startGame = function (count) {
@@ -1227,6 +1238,10 @@
 
       window.addEventListener("keydown", (e) => {
         keys[e.code] = true;
+        if (state === "playing") {
+          if (e.code === "KeyB") debugMode = !debugMode;
+          if (debugMode && e.code === "KeyP") rotationFrozen = !rotationFrozen;
+        }
         if (state === "gameover" && e.code === "KeyR") {
           showMenu();
           state = "menu";
